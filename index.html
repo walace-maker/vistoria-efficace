@@ -291,6 +291,8 @@ svg.ov .rasc{fill:rgba(196,106,18,.15);stroke:#C46A12;stroke-width:2;vector-effe
       </div>
     </section>
 
+    <button class="ghost" type="button" id="btn-video" hidden style="width:100%">▶ Como usar o app (vídeo)</button>
+
     <details class="mais" id="listas-box">
       <summary>Minhas listas</summary>
       <p class="hint" style="margin:0 0 8px">Edite as opções que aparecem nos botões do Campo e no termo. Renomear ou apagar não altera as fotos já gravadas. “Outra” e “Sem anomalia” ficam sempre no fim.</p>
@@ -1978,7 +1980,7 @@ svg.ov .rasc{fill:rgba(196,106,18,.15);stroke:#C46A12;stroke-width:2;vector-effe
       var i = pend.indexOf(p); if (i >= 0) pend.splice(i,1);
       await esquecer(p);
       try { URL.revokeObjectURL(p.url); } catch(e){}
-      if (p.vid===atual) toast(p.etiqueta+" enviada");
+      if (p.vid===atual) toast(p.etiqueta+(window.EFFICACE_LOCAL ? " salva" : " enviada"));
     } catch(e){
       var codigo = e && e.code;
       if (codigo==="too_large" || codigo==="unsupported_type" || codigo==="invalid_request"){
@@ -3051,6 +3053,19 @@ svg.ov .rasc{fill:rgba(196,106,18,.15);stroke:#C46A12;stroke-width:2;vector-effe
     fr.srcdoc = html;
   });
 
+  /* vídeo de como usar (só no app próprio) */
+  $("btn-video").addEventListener("click", function(){
+    var ov = document.createElement("div");
+    ov.style.cssText = "position:fixed;inset:0;z-index:60;background:#0E2218;display:flex;flex-direction:column";
+    var vid = document.createElement("video"); vid.src = "video/como-usar.mp4"; vid.controls = true; vid.autoplay = true; vid.playsInline = true; vid.setAttribute("playsinline","");
+    vid.style.cssText = "flex:1;min-height:0;width:100%;background:#0E2218";
+    vid.addEventListener("error", function(){ toast("Para ver o vídeo, o celular precisa estar com internet."); });
+    var barra = el("div",{style:"display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;padding-top:calc(10px + env(safe-area-inset-top,0px));color:#fff"},[
+      el("b",{text:"Como usar o Vistoria Efficace"}),
+      el("button",{class:"ghost",type:"button",style:"background:#fff",onclick:function(){ try { vid.pause(); } catch(e){} ov.remove(); }},["Fechar"])]);
+    ov.appendChild(barra); ov.appendChild(vid); document.body.appendChild(ov);
+  });
+
   /* copiar legendas */
   function todasLegendas(){
     var ordem = Object.keys(numeros);
@@ -3078,6 +3093,7 @@ svg.ov .rasc{fill:rgba(196,106,18,.15);stroke:#C46A12;stroke-width:2;vector-effe
     if (!downloads) $("btn-exportar").title = "Exportação indisponível neste acesso";
     if (!db){ avisar("Para salvar fotos, abra este app pelo Claude, logado na sua conta."); return; }
     if (window.EFFICACE_LOCAL){
+      $("btn-video").hidden = false;
       $("hint-arq").textContent = "Ao terminar, toque em Enviar ao Google Drive. Vai tudo para a pasta Vistoria Efficace no seu Drive: fotos originais, plantas, assinaturas, planilhas e o levantamento. Depois, Liberar espaço apaga do celular só o que já está no Drive.";
       $("hint-laudo").textContent = "Para o laudo, use a pasta da vistoria no Drive ou o pacote .zip. As fotos marcadas como LAUDO vão primeiro.";
       if (gdClientId() && navigator.onLine) gdCarregar();
