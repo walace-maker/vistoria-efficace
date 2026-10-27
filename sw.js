@@ -1,5 +1,5 @@
 /* Vistoria Efficace — service worker: abre sem internet e serve as fotos guardadas no celular. */
-var VERSAO = "ve-v3";
+var VERSAO = "ve-v4";
 var NUCLEO = ["./", "index.html", "runtime.js", "manifest.webmanifest", "icon-192.png", "icon-512.png", "vendor/jszip.min.js", "vendor/pdf.min.js", "vendor/pdf.worker.min.js"];
 self.addEventListener("install", function(e){ e.waitUntil(caches.open(VERSAO).then(function(c){ return c.addAll(NUCLEO); }).then(function(){ return self.skipWaiting(); })); });
 self.addEventListener("activate", function(e){ e.waitUntil(caches.keys().then(function(ks){ return Promise.all(ks.filter(function(k){ return k !== VERSAO && k.indexOf("ve-") === 0; }).map(function(k){ return caches.delete(k); })); }).then(function(){ return self.clients.claim(); })); });
