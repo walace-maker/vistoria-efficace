@@ -377,6 +377,19 @@ svg.ov .rasc{fill:rgba(196,106,18,.15);stroke:#C46A12;stroke-width:2;vector-effe
           <button class="ghost" type="button" id="btn-amb-ok-conc" hidden>Marcar ambiente concluído</button>
           <button class="ghost" type="button" id="btn-un-conc" hidden>Marcar unidade concluída</button>
         </div>
+        <details class="mais" id="dim-box" hidden style="margin-top:8px">
+          <summary id="dim-sum">Dimensões do ambiente</summary>
+          <div class="grid2" style="gap:8px">
+            <div class="field"><label for="dim-l">Largura (m)</label><input type="text" id="dim-l" inputmode="decimal" placeholder="ex.: 3,20" autocomplete="off"></div>
+            <div class="field"><label for="dim-c">Comprimento (m)</label><input type="text" id="dim-c" inputmode="decimal" placeholder="ex.: 4,50" autocomplete="off"></div>
+            <div class="field"><label for="dim-pd">Pé-direito (m)</label><input type="text" id="dim-pd" inputmode="decimal" placeholder="ex.: 2,70" autocomplete="off"></div>
+            <div class="field"><label for="dim-a">Área medida (m²), se o ambiente não for retangular</label><input type="text" id="dim-a" inputmode="decimal" placeholder="opcional" autocomplete="off"></div>
+            <div class="field"><label for="dim-inst">Instrumento</label><select id="dim-inst"><option value="">—</option><option>Trena laser</option><option>Trena</option><option>Projeto (não medido)</option><option>Outro</option></select></div>
+          </div>
+          <p id="dim-res" style="margin:8px 0;font-size:15px"></p>
+          <div class="acoes"><button class="primary" type="button" id="btn-dim-salvar">Salvar dimensões</button><button class="ghost danger" type="button" id="btn-dim-apagar" hidden>Apagar</button></div>
+          <p class="hint" style="margin:6px 0 0">Uma vez por ambiente. O app calcula área do piso, perímetro, área das paredes (sem descontar portas e janelas) e volume. Vai para a planilha ambientes.csv e para o relatório.</p>
+        </details>
       </section>
 
       <section>
@@ -2245,12 +2258,69 @@ svg.ov .rasc{fill:rgba(196,106,18,.15);stroke:#C46A12;stroke-width:2;vector-effe
   }
   $("btn-amb-ok-conc").addEventListener("click", function(){ if (sel.ambiente) alternarConcluido(chaveUn(), sel.ambiente); });
   $("btn-un-conc").addEventListener("click", function(){ var k = chaveUn(); if (k && sel.unidade !== "AC") alternarConcluido(k, ""); });
+  /* dimensões do ambiente (largura × comprimento × pé-direito) */
+  var dimMostrada = null;
+  function numBR(x){ var n = parseFloat(String(x||"").trim().replace(/\s/g,"").replace(",", ".")); return isFinite(n) && n > 0 ? n : null; }
+  function f2(n){ return n === null || n === undefined ? "" : n.toFixed(2).replace(".", ","); }
+  function calcDim(d){
+    var l = numBR(d.l), c = numBR(d.c), pd = numBR(d.pd), a = numBR(d.a);
+    var area = a || (l && c ? l*c : null), per = l && c ? 2*(l+c) : null;
+    return {l:l, c:c, pd:pd, area:area, per:per, paredes: per && pd ? per*pd : null, vol: area && pd ? area*pd : null, areaMedida: !!a};
+  }
+  function textoDim(k){
+    var t = [];
+    if (k.l && k.c) t.push(f2(k.l)+" × "+f2(k.c)+" m"); if (k.pd) t.push("pé-direito "+f2(k.pd)+" m");
+    if (k.area) t.push("piso "+f2(k.area)+" m²"+(k.areaMedida ? " (medida)" : ""));
+    if (k.per) t.push("perímetro "+f2(k.per)+" m"); if (k.paredes) t.push("paredes "+f2(k.paredes)+" m²"); if (k.vol) t.push("volume "+f2(k.vol)+" m³");
+    return t.join(" · ");
+  }
+  function chaveDim(){ return chaveUn()+"|"+sel.ambiente; }
+  function lerDimInputs(){ return {l:$("dim-l").value, c:$("dim-c").value, pd:$("dim-pd").value, a:$("dim-a").value}; }
+  function renderDims(){
+    var v = vAtual(), box = $("dim-box");
+    box.hidden = !(v && localPronto()); if (box.hidden) return;
+    var k = chaveDim(), d = (v.dims || {})[k];
+    if (dimMostrada !== k){
+      dimMostrada = k;
+      $("dim-l").value = d ? (d.l||"") : ""; $("dim-c").value = d ? (d.c||"") : ""; $("dim-pd").value = d ? (d.pd||"") : ""; $("dim-a").value = d ? (d.a||"") : ""; $("dim-inst").value = d ? (d.inst||"") : "";
+    }
+    $("dim-sum").textContent = "Dimensões de "+sel.ambiente+(d ? " · "+textoDim(calcDim(d)).split(" · ").slice(0,2).join(" · ") : " (ainda não medido)");
+    $("btn-dim-apagar").hidden = !d;
+    var r = textoDim(calcDim(lerDimInputs())); $("dim-res").textContent = r ? r : "Preencha largura, comprimento e pé-direito.";
+  }
+  ["dim-l","dim-c","dim-pd","dim-a"].forEach(function(id){ $(id).addEventListener("input", function(){ var r = textoDim(calcDim(lerDimInputs())); $("dim-res").textContent = r || "Preencha largura, comprimento e pé-direito."; }); });
+  $("btn-dim-salvar").addEventListener("click", async function(){
+    var v = vAtual(); if (!v || !localPronto()) return;
+    var ent = lerDimInputs(), k = calcDim(ent);
+    if (!(k.l && k.c) && !k.area){ toast("Informe largura e comprimento (ou a área medida)."); return; }
+    var pr = ehPredio(v), esc = escopoAtual(v), pv = pavPorId(v, sel.pav), chave = chaveDim();
+    var reg = {l: ent.l.trim(), c: ent.c.trim(), pd: ent.pd.trim(), a: ent.a.trim(), inst: $("dim-inst").value, amb: sel.ambiente, esc: pr ? esc : "",
+      pav: pr && esc !== "ext" && pv ? pv.nome : "", pavId: pr && esc !== "ext" ? sel.pav : "", un: pr ? (esc==="un" ? sel.unidade : esc==="ac" ? "Áreas comuns" : "Externo") : (sel.unidade || ""), em: Date.now()};
+    try { await gravarV(function(vv){ var d = Object.assign({}, vv.dims || {}); d[chave] = reg; return {dims: d}; }); dimMostrada = null; toast("Dimensões de "+sel.ambiente+" salvas"); }
+    catch(e){ toast("Não foi possível salvar as dimensões."); }
+  });
+  $("btn-dim-apagar").addEventListener("click", async function(){
+    var chave = chaveDim();
+    try { await gravarV(function(vv){ var d = Object.assign({}, vv.dims || {}); delete d[chave]; return {dims: d}; }); dimMostrada = null; toast("Dimensões apagadas"); } catch(e){}
+  });
+  function dimsOrdenadas(v){
+    var ds = v.dims || {}, pvs = pavsDe(v);
+    return Object.keys(ds).map(function(k){ return ds[k]; }).sort(function(a, b){
+      var ia = a.esc==="ext" ? 999 : pvs.findIndex(function(p){ return p.id===a.pavId; }), ib = b.esc==="ext" ? 999 : pvs.findIndex(function(p){ return p.id===b.pavId; });
+      if (ia !== ib) return ia - ib;
+      if (a.un !== b.un) return String(a.un).localeCompare(String(b.un), "pt-BR", {numeric:true});
+      var la = ambsEscopo(v, a.esc || (ehPredio(v) ? "un" : "casa")), x = la.indexOf(a.amb), y = la.indexOf(b.amb);
+      return (x<0?99:x) - (y<0?99:y);
+    });
+  }
+
   function renderConclusao(){
     var ba = $("btn-amb-ok-conc"), bu = $("btn-un-conc");
     var k = chaveUn(), nomeU = ehPredio(vAtual()) ? (sel.unidade && sel.unidade !== "AC" ? "apto "+sel.unidade : "") : sel.unidade;
     ba.hidden = !localPronto(); bu.hidden = !nomeU;
     if (!ba.hidden) ba.textContent = estaConcluido(k, sel.ambiente) ? "Reabrir ambiente" : "Marcar "+sel.ambiente+" concluído";
     if (nomeU) bu.textContent = estaConcluido(k, "") ? "Reabrir "+nomeU : "Marcar "+nomeU+" como concluído";
+    try { renderDims(); } catch(e){ console.warn(e); }
   }
 
   /* checklist do percurso */
@@ -2749,6 +2819,10 @@ svg.ov .rasc{fill:rgba(196,106,18,.15);stroke:#C46A12;stroke-width:2;vector-effe
       plHtml += '<section class="'+(j === 0 && !pres.length ? 'bloco' : 'quebra')+'"><h2>Planta '+(j+1)+' — '+E(p.nome)+'</h2><p class="m">'+pinos.length+' fotos localizadas nesta planta.</p><div class="pl"><img src="'+E(plNome[p.id])+'" alt="">'+
         pinos.map(function(f){ return '<span style="left:'+(f.pino.x*100)+'%;top:'+(f.pino.y*100)+'%">'+(f.seq ? String(f.seq) : "")+'</span>'; }).join("")+'</div></section>';
     });
+    var dimsR = dimsOrdenadas(v), dimHtml = '';
+    if (dimsR.length) dimHtml = '<section class="bloco"><h2>Dimensões dos ambientes</h2><table class="grade"><thead><tr><th>Local</th><th>Ambiente</th><th>L × C (m)</th><th>Pé-direito (m)</th><th>Piso (m²)</th><th>Perímetro (m)</th><th>Paredes (m²)</th><th>Volume (m³)</th></tr></thead><tbody>'+
+      dimsR.map(function(d){ var k = calcDim(d); return '<tr><td>'+E([d.esc==="ext" ? "Externo" : d.pav, d.esc==="un" ? nomeUn(d.un) : d.esc==="ac" ? "áreas comuns" : (d.esc ? "" : d.un)].filter(Boolean).join(" · "))+'</td><td>'+E(d.amb)+'</td><td>'+(k.l && k.c ? f2(k.l)+' × '+f2(k.c) : '—')+'</td><td>'+(f2(k.pd)||'—')+'</td><td>'+f2(k.area)+(k.areaMedida ? '*' : '')+'</td><td>'+(f2(k.per)||'—')+'</td><td>'+(f2(k.paredes)||'—')+'</td><td>'+(f2(k.vol)||'—')+'</td></tr>'; }).join("")+
+      '</tbody></table><p class="m" style="margin-top:2mm;font-size:8pt">Área das paredes sem desconto de vãos (portas e janelas). * área medida em campo (ambiente não retangular).</p></section>';
     var figs = ordem.map(function(f){
       var nf = nomeFoto(f), etq = f.etiqueta || etiquetaDe(f), ans = anomsDe(f), ms = medsDe(f);
       var pl = null; if (f.pino) pls.forEach(function(p){ if (p.id === f.pino.pa) pl = p; });
@@ -2785,7 +2859,7 @@ svg.ov .rasc{fill:rgba(196,106,18,.15);stroke:#C46A12;stroke-width:2;vector-effe
     var rod = '<div class="rod"><span>'+E(RESP.nome+" · "+RESP.crea)+'</span><span>Gerado em '+E(new Date().toLocaleString("pt-BR"))+'</span></div>';
     return '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Relatório fotográfico — '+E(v.cliente)+'</title><style>'+css+'</style></head><body>'+
       '<table class="frame"><thead><tr><td>'+cab+'</td></tr></thead><tfoot><tr><td>'+rod+'</td></tr></tfoot><tbody><tr><td>'+
-      capa+termo+plHtml+'<section class="fotos"><h2>Registro fotográfico</h2>'+figs+'</section></td></tr></tbody></table></body></html>';
+      capa+termo+plHtml+dimHtml+'<section class="fotos"><h2>Registro fotográfico</h2>'+figs+'</section></td></tr></tbody></table></body></html>';
   }
   /* monta as planilhas, o obra.json e o levantamento; nomeFoto(f) devolve o caminho do arquivo da foto no pacote */
   function montarDados(v, ordem, nomeFoto, plNome, arqAssin, formato){
@@ -2811,19 +2885,22 @@ svg.ov .rasc{fill:rgba(196,106,18,.15);stroke:#C46A12;stroke-width:2;vector-effe
       pavimentos:pavsDe(v), ambientes:{unidades:ambsEscopo(v,"un"), areas_comuns:ehPredio(v)?ambsEscopo(v,"ac"):[], externo:ehPredio(v)?ambsEscopo(v,"ext"):[]},
       plantas:plantasDe(v).map(function(p){ return {nome:p.nome, arquivo:plNome[p.id]||"", largura:p.w, altura:p.h, vale_para:p.uso||"todos", ambientes:p.ambs||[]}; }),
       total_fotos:ordem.length, fotos_para_laudo:ordem.filter(function(f){ return f.destaque; }).map(function(f){ return f.etiqueta; })};
+    var dimL = [["andar_ou_area","unidade","ambiente","largura_m","comprimento_m","pe_direito_m","area_piso_m2","area_informada","perimetro_m","area_paredes_bruta_m2","volume_m3","instrumento","medido_em"]];
+    dimsOrdenadas(v).forEach(function(d){ var k = calcDim(d); dimL.push([d.esc==="ext" ? "Externo" : (d.pav||""), d.un||"", d.amb, f2(k.l), f2(k.c), f2(k.pd), f2(k.area), k.areaMedida ? "sim" : "", f2(k.per), f2(k.paredes), f2(k.vol), d.inst||"", dtBR(d.em)]); });
+    obra.dimensoes = dimsOrdenadas(v).map(function(d){ var k = calcDim(d); return {andar:d.pav||"", unidade:d.un||"", ambiente:d.amb, largura_m:k.l, comprimento_m:k.c, pe_direito_m:k.pd, area_piso_m2:k.area, perimetro_m:k.per, area_paredes_bruta_m2:k.paredes, volume_m3:k.vol, instrumento:d.inst||""}; });
     var drive = formato === "drive";
     var leiame = ["PACOTE DA VISTORIA — formato vistoria-efficace, versão 1","",
       (drive ? "01 Fotos originais/     " : "fotos/                  ")+"fotos renomeadas pela etiqueta"+(drive ? " (originais da câmera)" : ""),
       (drive ? "03 Plantas/             " : "plantas/                ")+"plantas usadas, numeradas",
       (drive ? "04 Documentos/          " : "documentos/             ")+"assinaturas do termo de comparecimento",
-      "legendas.csv            uma linha por foto, na ordem do laudo (separador ; e codificação UTF-8)","medicoes.csv            uma linha por medição","anomalias.csv           uma linha por anomalia",
+      "legendas.csv            uma linha por foto, na ordem do laudo (separador ; e codificação UTF-8)","ambientes.csv           dimensões medidas de cada ambiente (largura, comprimento, pé-direito, áreas e volume)","medicoes.csv            uma linha por medição","anomalias.csv           uma linha por anomalia",
       "cadeia_de_custodia.csv  SHA-256 do arquivo original de cada foto, datas e origem","obra.json               dados da vistoria, presentes, quesitos, estrutura e plantas","levantamento.html       relatório fotográfico (abra no navegador e imprima em PDF)","",
       "Etiqueta: AND<código do andar>-AP<unidade> (ou AC para áreas comuns, EXT para externo)-<ambiente>-<elemento>-F<nº da foto>.",
       "Paredes: P1 é a parede da porta; as outras seguem no sentido horário (P2 à esquerda de quem entra).",
       "As fotos marcadas \"usar no laudo\" aparecem com \"sim\" na coluna usar_no_laudo de legendas.csv.",
       "As colunas destes arquivos só mudam com nova versão do formato, informada aqui."].join("\r\n");
     var html = relatorioHtml(v, ordem, nomeFoto, plNome, arqAssin);
-    return {"legendas.csv": csv(leg), "medicoes.csv": csv(med), "anomalias.csv": csv(anm), "cadeia_de_custodia.csv": csv(cad), "obra.json": JSON.stringify(obra, null, 2), "LEIAME.txt": leiame, "levantamento.html": html};
+    return {"legendas.csv": csv(leg), "ambientes.csv": csv(dimL), "medicoes.csv": csv(med), "anomalias.csv": csv(anm), "cadeia_de_custodia.csv": csv(cad), "obra.json": JSON.stringify(obra, null, 2), "LEIAME.txt": leiame, "levantamento.html": html};
   }
   $("btn-exportar").addEventListener("click", async function(){
     var v = vAtual(); if (!v) return;
